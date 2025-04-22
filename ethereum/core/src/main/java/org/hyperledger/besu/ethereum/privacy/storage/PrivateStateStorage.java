@@ -14,12 +14,11 @@
  */
 package org.hyperledger.besu.ethereum.privacy.storage;
 
+import org.apache.tuweni.bytes.Bytes;
+import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.ethereum.privacy.PrivateTransactionReceipt;
 
 import java.util.Optional;
-
-import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.Bytes32;
 
 public interface PrivateStateStorage {
 
@@ -50,6 +49,14 @@ public interface PrivateStateStorage {
     Updater putDatabaseVersion(int version);
 
     Updater putAddDataKey(Bytes32 privacyGroupId, Bytes32 addDataKey);
+
+    Updater removeTransactionReceipt(Bytes32 blockHash, Bytes32 transactionHash);
+
+    Updater removePrivateBlockMetadata(Bytes32 blockHash, Bytes32 privacyGroupId);
+
+    Updater removePrivacyGroupHeadBlockMap(Bytes32 blockHash);
+
+    Updater removeAddDataKey(Bytes32 privacyGroupId);
 
     void commit();
 

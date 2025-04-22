@@ -14,19 +14,18 @@
  */
 package org.hyperledger.besu.cli;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static java.util.Arrays.asList;
-import static java.util.Collections.singletonList;
-import static org.hyperledger.besu.cli.DefaultCommandValues.getDefaultBesuDataPath;
-import static org.hyperledger.besu.cli.config.NetworkName.MAINNET;
-import static org.hyperledger.besu.cli.util.CommandLineUtils.DEPENDENCY_WARNING_MSG;
-import static org.hyperledger.besu.cli.util.CommandLineUtils.isOptionSet;
-import static org.hyperledger.besu.controller.BesuController.DATABASE_PATH;
-import static org.hyperledger.besu.ethereum.api.jsonrpc.JsonRpcConfiguration.DEFAULT_ENGINE_JSON_RPC_PORT;
-import static org.hyperledger.besu.ethereum.api.jsonrpc.authentication.EngineAuthService.EPHEMERAL_JWT_FILE;
-import static org.hyperledger.besu.nat.kubernetes.KubernetesNatManager.DEFAULT_BESU_SERVICE_NAME_FILTER;
-
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Strings;
+import com.google.common.base.Suppliers;
+import com.google.common.collect.ImmutableMap;
+import io.vertx.core.Vertx;
+import io.vertx.core.VertxOptions;
+import io.vertx.core.json.DecodeException;
+import io.vertx.core.metrics.MetricsOptions;
+import org.apache.commons.net.util.SubnetUtils.SubnetInfo;
+import org.apache.tuweni.bytes.Bytes;
+import org.apache.tuweni.bytes.Bytes32;
+import org.apache.tuweni.units.bigints.UInt256;
 import org.hyperledger.besu.BesuInfo;
 import org.hyperledger.besu.Runner;
 import org.hyperledger.besu.RunnerBuilder;
@@ -112,6 +111,7 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.ipc.JsonRpcIpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.websocket.WebSocketConfiguration;
 import org.hyperledger.besu.ethereum.api.query.BlockchainQueries;
 import org.hyperledger.besu.ethereum.chain.Blockchain;
+import org.hyperledger.besu.ethereum.core.Block;
 import org.hyperledger.besu.ethereum.core.MiningParameters;
 import org.hyperledger.besu.ethereum.core.MiningParametersMetrics;
 import org.hyperledger.besu.ethereum.core.PrivacyParameters;
@@ -129,8 +129,13 @@ import org.hyperledger.besu.ethereum.p2p.peers.StaticNodesParser;
 import org.hyperledger.besu.ethereum.p2p.rlpx.connections.netty.TLSConfiguration;
 import org.hyperledger.besu.ethereum.permissioning.LocalPermissioningConfiguration;
 import org.hyperledger.besu.ethereum.permissioning.PermissioningConfiguration;
+import org.hyperledger.besu.ethereum.privacy.storage.PrivacyGroupHeadBlockMap;
+import org.hyperledger.besu.ethereum.privacy.storage.PrivateBlockMetadata;
+import org.hyperledger.besu.ethereum.privacy.storage.PrivateStateStorage;
+import org.hyperledger.besu.ethereum.privacy.storage.PrivateTransactionMetadata;
 import org.hyperledger.besu.ethereum.privacy.storage.keyvalue.PrivacyKeyValueStorageProvider;
 import org.hyperledger.besu.ethereum.privacy.storage.keyvalue.PrivacyKeyValueStorageProviderBuilder;
+import org.hyperledger.besu.ethereum.privacy.storage.migration.PrivateStorageMigrationException;
 import org.hyperledger.besu.ethereum.storage.StorageProvider;
 import org.hyperledger.besu.ethereum.storage.keyvalue.KeyValueSegmentIdentifier;
 import org.hyperledger.besu.ethereum.storage.keyvalue.KeyValueStorageProvider;
@@ -202,6 +207,16 @@ import org.hyperledger.besu.util.PermissioningConfigurationValidator;
 import org.hyperledger.besu.util.number.Fraction;
 import org.hyperledger.besu.util.number.Percentage;
 import org.hyperledger.besu.util.number.PositiveNumber;
+import org.identityconnectors.common.logging.Log;
+import org.slf4j.Logger;
+import picocli.AutoComplete;
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.ExecutionException;
+import picocli.CommandLine.IExecutionStrategy;
+import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.ParameterException;
 
 import java.io.File;
 import java.io.IOException;
@@ -231,26 +246,18 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Strings;
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableMap;
-import io.vertx.core.Vertx;
-import io.vertx.core.VertxOptions;
-import io.vertx.core.json.DecodeException;
-import io.vertx.core.metrics.MetricsOptions;
-import org.apache.commons.net.util.SubnetUtils.SubnetInfo;
-import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.units.bigints.UInt256;
-import org.slf4j.Logger;
-import picocli.AutoComplete;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.ExecutionException;
-import picocli.CommandLine.IExecutionStrategy;
-import picocli.CommandLine.Mixin;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.ParameterException;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+import static java.util.Arrays.asList;
+import static java.util.Collections.singletonList;
+import static org.hyperledger.besu.cli.DefaultCommandValues.getDefaultBesuDataPath;
+import static org.hyperledger.besu.cli.config.NetworkName.MAINNET;
+import static org.hyperledger.besu.cli.util.CommandLineUtils.DEPENDENCY_WARNING_MSG;
+import static org.hyperledger.besu.cli.util.CommandLineUtils.isOptionSet;
+import static org.hyperledger.besu.controller.BesuController.DATABASE_PATH;
+import static org.hyperledger.besu.ethereum.api.jsonrpc.JsonRpcConfiguration.DEFAULT_ENGINE_JSON_RPC_PORT;
+import static org.hyperledger.besu.ethereum.api.jsonrpc.authentication.EngineAuthService.EPHEMERAL_JWT_FILE;
+import static org.hyperledger.besu.nat.kubernetes.KubernetesNatManager.DEFAULT_BESU_SERVICE_NAME_FILTER;
 
 /** Represents the main Besu CLI command that runs the Besu Ethereum client full node. */
 @SuppressWarnings("FieldCanBeLocal") // because Picocli injected fields report false positives
@@ -482,7 +489,7 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
         Fraction.fromFloat(DEFAULT_FRACTION_REMOTE_WIRE_CONNECTIONS_ALLOWED).toPercentage();
 
     @SuppressWarnings({"FieldCanBeFinal", "FieldMayBeFinal"}) // PicoCLI requires non-final Strings.
-    @CommandLine.Option(
+    @Option(
         names = {"--discovery-dns-url"},
         description = "Specifies the URL to use for DNS discovery")
     private String discoveryDnsUrl = null;
@@ -820,7 +827,7 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
   private final Map<String, String> genesisConfigOverrides =
       new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
-  @CommandLine.Option(
+  @Option(
       names = {"--pid-path"},
       paramLabel = MANDATORY_PATH_FORMAT_HELP,
       description = "Path to PID file (optional)")
@@ -830,7 +837,7 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
   @CommandLine.ArgGroup(validate = false, heading = "@|bold API Configuration Options|@%n")
   ApiConfigurationOptions apiConfigurationOptions = new ApiConfigurationOptions();
 
-  @CommandLine.Option(
+  @Option(
       names = {"--static-nodes-file"},
       paramLabel = MANDATORY_FILE_FORMAT_HELP,
       description =
@@ -1118,6 +1125,8 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
 
       besuPluginContext.beforeExternalServices();
 
+      prunePrivateData();
+
       final var runner = buildRunner();
       runner.startExternalServices();
 
@@ -1136,6 +1145,98 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
       logger.error("Failed to start Besu", e);
       throw new ParameterException(this.commandLine, e.getMessage(), e);
     }
+  }
+
+  private void prunePrivateData() {
+
+    final Blockchain blockchain = besuController.getProtocolContext().getBlockchain();
+    final PrivateStateStorage privateStateStorage = besuController.getPrivacyParameters().getPrivateStateStorage();
+
+    final String[] privacyGroupIdsRemoved = new String[]{
+            "W9tAzyi0WAhJCVn6rJMRifQZ/egSeFY98QBlM2zVEF4=", "ECHdCkeoAMyfB+hUheRuH1qP0V92zJQERfAwasPSwDw=",
+            "K+BrdF8NR+YJi+Ie5b+Sx6xwqMmasqDv5ORQXh9IBaU=", "nJlFnOV7cuV8/JuWQ9j5Vn74jmpEVGjxj6B6sD/FAks=",
+            "0J4CaE/COykOPeRf+WAO4/TdBP61slhWkOLD5hEu7IE=", "xcnl3LAyIhXpg4K0Y1qGpFXrwHs668GOzZrBOm0cUKI=",
+            "k6c3jN02+CpFSc/uYJJmL+65iV83UQAl5lyCHpMkk84=", "56r4t0XLZ8amMR4DbKNYsZbTxo9krxcFPWdusVEJFY0=",
+            "OG3iqhMD46t6S02tvSfvb3jTdGbMxLPdH8bpqhiUmYo=", "IqE60ihPCMQTsB6lcQ4djbs0seR1s7cv+f7qt8QnzoA=",
+            "XO1KtnQ+0ksr89wzbu82b2Mu3rjeQUKzBiVRBGF+9vI=", "cxb76SQIauyDkHleKwjxPt49l7GdYUcUXHBp5w5P8wQ=",
+            "bQ/nuZi6saxqERCGM77GBIkhobG7flgMl0yLQ83q2V8=", "Qen/PpxAHVPwFJBuCwQgTTR2VTCrWzJKCp7ksN0PnAM=",
+            "xr1LjWfI13FkZ2XFt3AUcpkpGxa9Fo61bjQqfzpR0Ig=", "aAQowUuFn6ikK0RTHS3FHS7q96ak3ZJdcjtYBrhO1E8=",
+            "/3F+ESiLVq43RkL3dn1w2IjFgb3CHBstLL0iQKRXP70=", "/GfxgIjSzO+/Pyvbk+otier5R287JtFcLzHN6tChWR0=",
+            "3q9xaTDMOY/l9VLyDuXIGjVtQN/ArASFAKz9pI/cmV4=", "nMPGkqIXUcVNJM9tvKz4qO7P2jETcFLAxbK45OHzxx0="
+    };
+    final Log LOG = Log.getLog(BesuCommand.class);
+    LOG.info("Starting PRUNE PRIVATE PROCCESS");
+    final long chainHeadBlockNumber = blockchain.getChainHeadBlockNumber();
+
+    long startTime = System.currentTimeMillis();
+
+    for (
+            long blockNumber = chainHeadBlockNumber;
+            blockNumber >= 0;
+            --blockNumber
+    ) {
+      String privacyGroupIdsWithDataInBlock = "";
+      PrivateStateStorage.Updater updater = privateStateStorage.updater();
+      final Block block =
+              blockchain
+                      .getBlockByNumber(blockNumber)
+                      .orElseThrow(PrivateStorageMigrationException::new);
+      final Hash blockHash = block.getHash();
+      Optional<PrivacyGroupHeadBlockMap> privacyGroupHeadBlockMap = privateStateStorage.getPrivacyGroupHeadBlockMap(blockHash);
+      for (final String privacyGroupId : privacyGroupIdsRemoved) {
+        if (
+                privacyGroupHeadBlockMap.isEmpty() ||
+                        !privacyGroupHeadBlockMap.get().containsKey(Bytes32.wrap(Bytes.fromBase64String(privacyGroupId)))
+        ) {
+          continue;
+        }
+        privacyGroupIdsWithDataInBlock = privacyGroupIdsWithDataInBlock.isEmpty() ? privacyGroupId : privacyGroupIdsWithDataInBlock + ", " + privacyGroupId;
+
+        final Optional<PrivateBlockMetadata> privateBlockMetadata = privateStateStorage.getPrivateBlockMetadata(blockHash, Bytes32.wrap(Bytes.fromBase64String(privacyGroupId)));
+        if (privateBlockMetadata.isPresent()) {
+          for (final PrivateTransactionMetadata transactionMetadata : privateBlockMetadata.get().getPrivateTransactionMetadataList()) {
+            // TODO: Confirm than transactionMetadata.stateRoot is a hash in public space (is PMT hash)
+            // LOG.info("Removing private transaction receipt in block " + blockNumber + ", privacyGroupId " + privacyGroupId + " and transaction hash " + transactionMetadata.getPrivateMarkerTransactionHash() + ".");
+            updater.removeTransactionReceipt(blockHash, transactionMetadata.getPrivateMarkerTransactionHash());
+          }
+        }
+        // LOG.info("Removing private block metadata in block " + blockNumber + " for privacyGroupId " + privacyGroupId);
+        updater.removePrivateBlockMetadata(
+                blockHash,
+                Bytes32.wrap(Bytes32.wrap(Bytes.fromBase64String(privacyGroupId)))
+        );
+
+        // LOG.info("Removing privacy group head block map of block hash " + blockHash + " from block number " + blockNumber + " for privacyGroupId " + privacyGroupId);
+        privacyGroupHeadBlockMap.get().remove(Bytes32.wrap(Bytes.fromBase64String(privacyGroupId)));
+      }
+      if (privacyGroupIdsWithDataInBlock.isEmpty()) {
+        continue;
+      }
+      privacyGroupHeadBlockMap.ifPresent(groupHeadBlockMap -> {
+                if (groupHeadBlockMap.isEmpty()) {
+                  updater.removePrivacyGroupHeadBlockMap(blockHash);
+                } else {
+                  updater.putPrivacyGroupHeadBlockMap(blockHash, groupHeadBlockMap);
+                }
+              }
+      );
+      if (blockNumber % 100 == 0) {
+        LOG.info("Pruned private data on block " + blockNumber + ", list of privacyGroupIds: " + privacyGroupIdsWithDataInBlock + ".");
+      }
+
+      updater.commit();
+    }
+
+    final PrivateStateStorage.Updater updater = privateStateStorage.updater();
+    for (final String privacyGroupId : privacyGroupIdsRemoved) {
+//      LOG.info("Removing add data key for the privacy group id " + privacyGroupId);
+      updater.removeAddDataKey(Bytes32.wrap(Bytes32.wrap(Bytes.fromBase64String(privacyGroupId))));
+    }
+    updater.commit();
+    LOG.info("Removed all lockup ids for the privacy groups in list: " + Arrays.toString(privacyGroupIdsRemoved).replace("[", "").replace("]", ""));
+
+    long durationMillis = System.currentTimeMillis() - startTime;
+    LOG.info("PRUNE PRIVATE DATA FINISHED. blocks processed " + chainHeadBlockNumber + ", number of privacy groups pruned: " + privacyGroupIdsRemoved.length + " Time spent: " + durationMillis / (1000 * 60 * 60) + ":" + (durationMillis / (1000 * 60)) % 60 + ":" + (durationMillis / 1000) % 60 + "." + durationMillis % 1000);
   }
 
   @VisibleForTesting
@@ -2199,7 +2300,7 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
         && DataStorageFormat.BONSAI.equals(dataStorageConfiguration.getDataStorageFormat())
         && dataStorageConfiguration.getBonsaiLimitTrieLogsEnabled()) {
 
-      if (CommandLineUtils.isOptionSet(
+      if (isOptionSet(
           commandLine, DataStorageOptions.BONSAI_LIMIT_TRIE_LOGS_ENABLED)) {
         throw new ParameterException(
             commandLine,

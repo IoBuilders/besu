@@ -14,8 +14,8 @@
  */
 package org.hyperledger.besu.ethereum.privacy.storage;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
+import org.apache.tuweni.bytes.Bytes;
+import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.ethereum.privacy.PrivateTransactionReceipt;
 import org.hyperledger.besu.ethereum.rlp.BytesValueRLPInput;
 import org.hyperledger.besu.ethereum.rlp.RLP;
@@ -26,8 +26,7 @@ import java.util.Arrays;
 import java.util.Optional;
 import java.util.function.Predicate;
 
-import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.Bytes32;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class PrivateStateKeyValueStorage implements PrivateStateStorage {
 
@@ -159,6 +158,35 @@ public class PrivateStateKeyValueStorage implements PrivateStateStorage {
       set(privacyGroupId, ADD_DATA_KEY, addDataKey);
       return this;
     }
+
+    @Override
+    public PrivateStateStorage.Updater removeTransactionReceipt(final Bytes32 blockHash, final Bytes32 transactionHash) {
+      final Bytes blockHashTxHash = Bytes.concatenate(blockHash, transactionHash);
+      remove(blockHashTxHash, TX_RECEIPT_SUFFIX);
+      return this;
+    }
+
+    @Override
+    public PrivateStateStorage.Updater removePrivateBlockMetadata(final Bytes32 blockHash, final Bytes32 privacyGroupId) {
+      remove(
+              Bytes.concatenate(blockHash, privacyGroupId),
+              METADATA_KEY_SUFFIX
+      );
+      return this;
+    }
+
+    @Override
+    public PrivateStateStorage.Updater removePrivacyGroupHeadBlockMap(final Bytes32 blockHash) {
+      remove(blockHash, PRIVACY_GROUP_HEAD_BLOCK_MAP_SUFFIX);
+      return this;
+    }
+
+    @Override
+    public PrivateStateStorage.Updater removeAddDataKey(final Bytes32 privacyGroupId) {
+      remove(privacyGroupId, ADD_DATA_KEY);
+      return this;
+    }
+
 
     @Override
     public void commit() {
