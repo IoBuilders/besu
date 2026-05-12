@@ -7,24 +7,23 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package org.hyperledger.besu.plugin.services.health;
+package org.hyperledger.besu.tests.acceptance.plugins;
 
 import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.HealthCheckService;
 
-/** The liveness check plugin. */
-public class LivenessCheckPlugin implements BesuPlugin {
+import com.google.auto.service.AutoService;
 
-  private static final String LIVENESS_ENDPOINT = "/liveness";
+@AutoService(BesuPlugin.class)
+public class TestHealthCheckPlugin implements BesuPlugin {
 
-  /** Instantiates a new liveness check plugin. */
-  public LivenessCheckPlugin() {}
+  private static final String CUSTOM_ENDPOINT = "/custom-health";
 
   @Override
   public void register(final ServiceManager context) {
@@ -32,7 +31,7 @@ public class LivenessCheckPlugin implements BesuPlugin {
         .getService(HealthCheckService.class)
         .ifPresent(
             healthCheckService ->
-                healthCheckService.registerHealthCheck(LIVENESS_ENDPOINT, params -> true));
+                healthCheckService.registerHealthCheck(CUSTOM_ENDPOINT, params -> true));
   }
 
   @Override

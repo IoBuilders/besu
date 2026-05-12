@@ -1,5 +1,5 @@
 /*
- * Copyright contributors to Hyperledger Besu.
+ * Copyright contributors to Besu.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -27,8 +27,6 @@ import java.util.Optional;
 public class ReadinessCheckPlugin implements BesuPlugin {
 
   private static final String READINESS_ENDPOINT = "/readiness";
-  private static final int DEFAULT_MIN_PEERS = 1;
-  private static final long DEFAULT_MAX_BLOCKS_BEHIND = 2;
 
   /** Instantiates a new readiness check plugin. */
   public ReadinessCheckPlugin() {}
@@ -99,25 +97,29 @@ public class ReadinessCheckPlugin implements BesuPlugin {
   }
 
   private boolean checkReadiness(final HealthCheckService.ParamSource params) {
-    final int minPeers = parseNonNegativeInt(params.getParam("minPeers")).orElse(DEFAULT_MIN_PEERS);
-    if (p2pService.getPeerCount() < minPeers) {
+    final String minPeersStr = params.getParam("minPeers");
+    final Optional<Integer> minPeers = parseNonNegativeInt(minPeersStr);
+    if (minPeers.isEmpty()) {
+      return false;
+    }
+    if (p2pService.getPeerCount() < minPeers.get()) {
       return false;
     }
 
-    final long maxBlocksBehind =
-        parseNonNegativeLong(params.getParam("maxBlocksBehind")).orElse(DEFAULT_MAX_BLOCKS_BEHIND);
+    final String maxBlocksStr = params.getParam("maxBlocksBehind");
+    final Optional<Long> maxBlocksBehind = parseNonNegativeLong(maxBlocksStr);
+    if (maxBlocksBehind.isEmpty()) {
+      return false;
+    }
     return cachedSyncStatus
         .map(
             syncStatus -> {
               long highestBlock = syncStatus.getHighestBlock();
               long currentBlock = syncStatus.getCurrentBlock();
-              // Check for overflow: if currentBlock > Long.MAX_VALUE - maxBlocksBehind,
-              // then currentBlock + maxBlocksBehind would overflow
-              if (currentBlock > Long.MAX_VALUE - maxBlocksBehind) {
-                return true; // Treat as healthy if we would overflow (conservative approach)
+              if (currentBlock > Long.MAX_VALUE - maxBlocksBehind.get()) {
+                return true;
               }
-              // Safe comparison: highestBlock <= currentBlock + maxBlocksBehind
-              return highestBlock <= currentBlock + maxBlocksBehind;
+              return highestBlock <= currentBlock + maxBlocksBehind.get();
             })
         .orElse(true);
   }

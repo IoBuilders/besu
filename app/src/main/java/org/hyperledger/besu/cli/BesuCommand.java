@@ -1271,14 +1271,17 @@ public class BesuCommand implements DefaultCommandValues, Runnable {
     rocksDBPlugin.register(besuPluginContext);
     new InMemoryStoragePlugin().register(besuPluginContext);
     livenessCheckPlugin = new LivenessCheckPlugin();
-    livenessCheckPlugin.register(besuPluginContext);
     readinessCheckPlugin = new ReadinessCheckPlugin();
 
-    // Only register readiness check if endpoint is not already registered
+    // Only register built-in health checks if endpoints are not already registered
+    // This allows external plugins to provide custom implementations
     besuPluginContext
         .getService(HealthCheckService.class)
         .ifPresent(
             healthCheckService -> {
+              if (!healthCheckService.getHealthCheck("/liveness").isPresent()) {
+                livenessCheckPlugin.register(besuPluginContext);
+              }
               if (!healthCheckService.getHealthCheck("/readiness").isPresent()) {
                 readinessCheckPlugin.register(besuPluginContext);
               }

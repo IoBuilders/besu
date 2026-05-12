@@ -1505,24 +1505,17 @@ public class RunnerBuilder {
 
   private HealthService createReadinessHealthService(
       final BesuPluginContextImpl pluginContext,
-      final Object peerNetwork,
-      final Object synchronizer) {
+      final P2PNetwork peerNetwork,
+      final Synchronizer synchronizer) {
     return pluginContext
         .getService(HealthCheckService.class)
         .flatMap(HealthCheckService::getReadinessCheck)
         .map(provider -> new HealthService(adaptProvider(provider)))
-        .orElseGet(
-            () ->
-                new HealthService(
-                    new ReadinessCheck(
-                        (org.hyperledger.besu.ethereum.p2p.network.P2PNetwork) peerNetwork,
-                        (org.hyperledger.besu.ethereum.core.Synchronizer) synchronizer)));
+        .orElseGet(() -> new HealthService(new ReadinessCheck(peerNetwork, synchronizer)));
   }
 
   private HealthService.HealthCheck adaptProvider(
       final HealthCheckService.HealthCheckProvider provider) {
-    return healthServiceParams ->
-        provider.isHealthy(
-            (HealthCheckService.ParamSource) name -> healthServiceParams.getParam(name));
+    return healthServiceParams -> provider.isHealthy(healthServiceParams::getParam);
   }
 }

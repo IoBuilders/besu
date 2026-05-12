@@ -1,5 +1,5 @@
 /*
- * Copyright contributors to Hyperledger Besu.
+ * Copyright contributors to Besu.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -21,9 +21,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.hyperledger.besu.plugin.ServiceManager;
+import org.hyperledger.besu.plugin.data.SyncStatus;
 import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.HealthCheckService;
 import org.hyperledger.besu.plugin.services.p2p.P2PService;
+
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,6 +74,7 @@ public class ReadinessCheckPluginTest {
 
     final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
     when(params.getParam("minPeers")).thenReturn("5");
+    when(params.getParam("maxBlocksBehind")).thenReturn("2");
     when(p2pService.getPeerCount()).thenReturn(3);
 
     org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isFalse();
@@ -90,6 +94,7 @@ public class ReadinessCheckPluginTest {
 
     final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
     when(params.getParam("minPeers")).thenReturn("3");
+    when(params.getParam("maxBlocksBehind")).thenReturn("2");
     when(p2pService.getPeerCount()).thenReturn(5);
 
     org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isTrue();
@@ -112,5 +117,169 @@ public class ReadinessCheckPluginTest {
     plugin.stop();
 
     verify(besuEvents).removeSyncStatusListener(1L);
+  }
+
+  @Test
+  void shouldPassWhenSyncStatusWithinThreshold() {
+    final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
+
+    final var captor =
+        org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
+    verify(healthCheckService).registerHealthCheck(eq("/readiness"), captor.capture());
+
+    final HealthCheckService.HealthCheckProvider provider = captor.getValue();
+
+    final SyncStatus syncStatus = mock(SyncStatus.class);
+    when(syncStatus.getCurrentBlock()).thenReturn(100L);
+    when(syncStatus.getHighestBlock()).thenReturn(101L);
+    triggerSyncStatusUpdate(syncStatus);
+
+    final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
+    when(params.getParam("minPeers")).thenReturn("1");
+    when(params.getParam("maxBlocksBehind")).thenReturn("2");
+    when(p2pService.getPeerCount()).thenReturn(1);
+
+    org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isTrue();
+  }
+
+  @Test
+  void shouldFailWhenSyncStatusExceedsThreshold() {
+    final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
+
+    final var captor =
+        org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
+    verify(healthCheckService).registerHealthCheck(eq("/readiness"), captor.capture());
+
+    final HealthCheckService.HealthCheckProvider provider = captor.getValue();
+
+    final SyncStatus syncStatus = mock(SyncStatus.class);
+    when(syncStatus.getCurrentBlock()).thenReturn(100L);
+    when(syncStatus.getHighestBlock()).thenReturn(200L);
+    triggerSyncStatusUpdate(syncStatus);
+
+    final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
+    when(params.getParam("minPeers")).thenReturn("1");
+    when(params.getParam("maxBlocksBehind")).thenReturn("2");
+    when(p2pService.getPeerCount()).thenReturn(1);
+
+    org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isFalse();
+  }
+
+  @Test
+  void shouldPassWhenHighestBlockEqualsCurrentBlock() {
+    final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
+
+    final var captor =
+        org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
+    verify(healthCheckService).registerHealthCheck(eq("/readiness"), captor.capture());
+
+    final HealthCheckService.HealthCheckProvider provider = captor.getValue();
+
+    final SyncStatus syncStatus = mock(SyncStatus.class);
+    when(syncStatus.getCurrentBlock()).thenReturn(100L);
+    when(syncStatus.getHighestBlock()).thenReturn(100L);
+    triggerSyncStatusUpdate(syncStatus);
+
+    final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
+    when(params.getParam("minPeers")).thenReturn("1");
+    when(params.getParam("maxBlocksBehind")).thenReturn("2");
+    when(p2pService.getPeerCount()).thenReturn(1);
+
+    org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isTrue();
+  }
+
+  @Test
+  void shouldTreatMalformedMinPeersAsUnhealthy() {
+    final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
+
+    final var captor =
+        org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
+    verify(healthCheckService).registerHealthCheck(eq("/readiness"), captor.capture());
+
+    final HealthCheckService.HealthCheckProvider provider = captor.getValue();
+
+    final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
+    when(params.getParam("minPeers")).thenReturn("not-a-number");
+    when(p2pService.getPeerCount()).thenReturn(100);
+
+    org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isFalse();
+  }
+
+  @Test
+  void shouldTreatMalformedMaxBlocksBehindAsUnhealthy() {
+    final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
+
+    final var captor =
+        org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
+    verify(healthCheckService).registerHealthCheck(eq("/readiness"), captor.capture());
+
+    final HealthCheckService.HealthCheckProvider provider = captor.getValue();
+
+    final SyncStatus syncStatus = mock(SyncStatus.class);
+    when(syncStatus.getCurrentBlock()).thenReturn(100L);
+    when(syncStatus.getHighestBlock()).thenReturn(200L);
+    triggerSyncStatusUpdate(syncStatus);
+
+    final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
+    when(params.getParam("minPeers")).thenReturn("1");
+    when(params.getParam("maxBlocksBehind")).thenReturn("invalid");
+    when(p2pService.getPeerCount()).thenReturn(100);
+
+    org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isFalse();
+  }
+
+  @Test
+  void shouldTreatNegativeMinPeersAsUnhealthy() {
+    final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
+
+    final var captor =
+        org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
+    verify(healthCheckService).registerHealthCheck(eq("/readiness"), captor.capture());
+
+    final HealthCheckService.HealthCheckProvider provider = captor.getValue();
+
+    final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
+    when(params.getParam("minPeers")).thenReturn("-1");
+    when(p2pService.getPeerCount()).thenReturn(100);
+
+    org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isFalse();
+  }
+
+  @Test
+  void shouldTreatNegativeMaxBlocksBehindAsUnhealthy() {
+    final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
+
+    final var captor =
+        org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
+    verify(healthCheckService).registerHealthCheck(eq("/readiness"), captor.capture());
+
+    final HealthCheckService.HealthCheckProvider provider = captor.getValue();
+
+    final SyncStatus syncStatus = mock(SyncStatus.class);
+    when(syncStatus.getCurrentBlock()).thenReturn(100L);
+    when(syncStatus.getHighestBlock()).thenReturn(200L);
+    triggerSyncStatusUpdate(syncStatus);
+
+    final HealthCheckService.ParamSource params = mock(HealthCheckService.ParamSource.class);
+    when(params.getParam("minPeers")).thenReturn("1");
+    when(params.getParam("maxBlocksBehind")).thenReturn("-5");
+    when(p2pService.getPeerCount()).thenReturn(100);
+
+    org.assertj.core.api.Assertions.assertThat(provider.isHealthy(params)).isFalse();
+  }
+
+  @SuppressWarnings("unchecked")
+  private void triggerSyncStatusUpdate(final SyncStatus syncStatus) {
+    final var listenerCaptor =
+        org.mockito.ArgumentCaptor.forClass(BesuEvents.SyncStatusListener.class);
+    verify(besuEvents).addSyncStatusListener(listenerCaptor.capture());
+    listenerCaptor.getValue().onSyncStatusChanged(Optional.of(syncStatus));
   }
 }
