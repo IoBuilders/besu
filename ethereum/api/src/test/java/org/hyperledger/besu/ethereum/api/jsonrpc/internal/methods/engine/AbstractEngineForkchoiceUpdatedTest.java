@@ -253,6 +253,7 @@ public abstract class AbstractEngineForkchoiceUpdatedTest {
             payloadParams.getPrevRandao(),
             payloadParams.getSuggestedFeeRecipient(),
             Optional.empty(),
+            Optional.empty(),
             Optional.empty());
 
     when(mergeCoordinator.preparePayload(
@@ -509,7 +510,7 @@ public abstract class AbstractEngineForkchoiceUpdatedTest {
                 mockHeader.getHash(), Hash.ZERO, mockParent.getHash()),
             Optional.of(payloadParams));
 
-    assertInvalidForkchoiceState(resp, expectedInvalidPayloadError());
+    assertInvalidForkchoiceState(resp, expectedInvalidWithdrawalsError());
     verify(engineCallListener, times(1)).executionEngineCalled();
   }
 
@@ -535,6 +536,7 @@ public abstract class AbstractEngineForkchoiceUpdatedTest {
             payloadParams.getTimestamp(),
             payloadParams.getPrevRandao(),
             payloadParams.getSuggestedFeeRecipient(),
+            Optional.empty(),
             Optional.empty(),
             Optional.empty());
 
@@ -581,7 +583,7 @@ public abstract class AbstractEngineForkchoiceUpdatedTest {
                 mockHeader.getHash(), Hash.ZERO, mockParent.getHash()),
             Optional.of(payloadParams));
 
-    assertInvalidForkchoiceState(resp, expectedInvalidPayloadError());
+    assertInvalidForkchoiceState(resp, expectedInvalidWithdrawalsError());
     verify(engineCallListener, times(1)).executionEngineCalled();
   }
 
@@ -625,6 +627,7 @@ public abstract class AbstractEngineForkchoiceUpdatedTest {
             payloadParams.getPrevRandao(),
             payloadParams.getSuggestedFeeRecipient(),
             withdrawals,
+            Optional.empty(),
             Optional.empty());
 
     when(mergeCoordinator.preparePayload(
@@ -669,6 +672,7 @@ public abstract class AbstractEngineForkchoiceUpdatedTest {
             payloadParams.getTimestamp(),
             payloadParams.getPrevRandao(),
             payloadParams.getSuggestedFeeRecipient(),
+            Optional.empty(),
             Optional.empty(),
             Optional.empty());
 
@@ -751,7 +755,11 @@ public abstract class AbstractEngineForkchoiceUpdatedTest {
   }
 
   protected RpcErrorType expectedInvalidPayloadError() {
-    return RpcErrorType.INVALID_WITHDRAWALS_PARAMS;
+    return RpcErrorType.INVALID_PAYLOAD_ATTRIBUTES;
+  }
+
+  protected RpcErrorType expectedInvalidWithdrawalsError() {
+    return RpcErrorType.INVALID_PAYLOAD_ATTRIBUTES;
   }
 
   protected JsonRpcResponse resp(
