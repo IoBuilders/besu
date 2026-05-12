@@ -80,7 +80,8 @@ public class WebSocketHostAllowlistTest {
         spy(
             new WebSocketMessageHandler(
                 vertx,
-                new JsonRpcExecutor(new CombinedJsonRpcProcessor(new NoOpMetricsSystem()), websocketMethods),
+                new JsonRpcExecutor(
+                    new CombinedJsonRpcProcessor(new NoOpMetricsSystem()), websocketMethods),
                 mock(EthScheduler.class),
                 TimeoutOptions.defaultOptions().getTimeoutSeconds()));
 

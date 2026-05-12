@@ -22,6 +22,7 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.JsonRpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.context.ContextKey;
 import org.hyperledger.besu.ethereum.api.jsonrpc.execution.JsonRpcExecutor;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.JsonRpcRequest;
+import org.hyperledger.besu.ethereum.api.jsonrpc.internal.exception.InvalidJsonRpcRequestException;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcErrorResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.RpcErrorType;
@@ -79,7 +80,11 @@ public class JsonRpcExecutorHandler {
                         .addArgument(timeoutMillis)
                         .addArgument(requestBodyAsJson)
                         .log();
-                    handleErrorAndEndResponse(ctx, null, RpcErrorType.TIMEOUT_ERROR);
+                    if (ctx.response().headWritten()) {
+                      ctx.response().reset();
+                    } else {
+                      handleErrorAndEndResponse(ctx, null, RpcErrorType.TIMEOUT_ERROR);
+                    }
                   });
 
       ctx.put("timerId", timerId);
@@ -123,15 +128,100 @@ public class JsonRpcExecutorHandler {
   private static void executeSingleRequest(
       final JsonRpcExecutor jsonRpcExecutor, final Tracer tracer, final RoutingContext ctx)
       throws IOException {
-    HttpServerResponse response = ctx.response();
-    response = response.putHeader("Content-Type", APPLICATION_JSON);
-
+    final HttpServerResponse response = ctx.response();
     final JsonObject jsonRequest = ctx.get(ContextKey.REQUEST_BODY_AS_JSON_OBJECT.name());
+
+    if (jsonRpcExecutor.isStreamingMethod(jsonRequest.getString("method"))) {
+      executeStreamingRequest(jsonRpcExecutor, tracer, ctx, response, jsonRequest);
+      return;
+    }
+
+    response.putHeader("Content-Type", APPLICATION_JSON);
     lazyTraceLogger(jsonRequest::toString);
     final JsonRpcResponse jsonRpcResponse =
         executeRequest(jsonRpcExecutor, tracer, jsonRequest, ctx);
     handleSingleResponse(response, jsonRpcResponse, ctx);
     cancelTimer(ctx);
+  }
+
+  private static void executeStreamingRequest(
+      final JsonRpcExecutor jsonRpcExecutor,
+      final Tracer tracer,
+      final RoutingContext ctx,
+      final HttpServerResponse response,
+      final JsonObject jsonRequest)
+      throws IOException {
+    // Do NOT set the status code eagerly — let JsonResponseStreamer flush headers
+    // on first write. This keeps the response uncommitted so that pre-stream
+    // errors (bad params, auth failures, missing blocks) can still produce a
+    // proper HTTP error with the correct status code.
+    try (final JsonResponseStreamer streamer =
+        new JsonResponseStreamer(response, ctx.request().remoteAddress())) {
+      final Optional<User> user = ContextKey.AUTHENTICATED_USER.extractFrom(ctx, Optional::empty);
+      final Context spanContext = ctx.get(SPAN_CONTEXT);
+      final Optional<JsonRpcResponse> preStreamError =
+          jsonRpcExecutor.executeStreaming(
+              user,
+              tracer,
+              spanContext,
+              () -> !ctx.response().closed(),
+              jsonRequest,
+              req -> req.mapTo(JsonRpcRequest.class),
+              streamer,
+              getJsonObjectMapper());
+      if (preStreamError.isPresent()) {
+        // Validation failed before any data was written to the stream.
+        // The streamer's close() is a no-op (chunked never set), so we can
+        // send a proper error response with the correct HTTP status code.
+        handleJsonRpcErrorResponse(ctx, preStreamError.get());
+        cancelTimer(ctx);
+        return;
+      }
+      // Streaming completed — end the chunked response.
+      // streamer.close() is called automatically by try-with-resources
+    } catch (final Exception e) {
+      cancelTimer(ctx);
+      if (!response.headWritten()) {
+        final Object id = jsonRequest.getValue("id");
+        final RpcErrorType errorType =
+            e instanceof InvalidJsonRpcRequestException ijrp
+                ? ijrp.getRpcErrorType()
+                : RpcErrorType.INTERNAL_ERROR;
+        handleJsonRpcError(ctx, id, errorType);
+      } else if (!response.ended()) {
+        response.reset();
+      }
+      if (e instanceof IOException ioe) {
+        throw ioe;
+      }
+      return;
+    }
+    cancelTimer(ctx);
+  }
+
+  private static void handleJsonRpcErrorResponse(
+      final RoutingContext ctx, final JsonRpcResponse jsonRpcResponse) throws IOException {
+    final HttpServerResponse response = ctx.response();
+    if (response.ended()) {
+      return;
+    }
+    response.setStatusCode(status(jsonRpcResponse).code());
+    if (jsonRpcResponse.getType() == RpcResponseType.NONE) {
+      response.end();
+      return;
+    }
+    lazyTraceLogger(() -> getJsonObjectMapper().writeValueAsString(jsonRpcResponse));
+    response.end(Json.encode(jsonRpcResponse));
+  }
+
+  private static void handleJsonRpcError(
+      final RoutingContext ctx, final Object id, final RpcErrorType errorType) {
+    final HttpServerResponse response = ctx.response();
+    if (!response.ended()) {
+      response
+          .setStatusCode(statusCodeFromError(errorType).code())
+          .end(Json.encode(new JsonRpcErrorResponse(id, errorType)));
+    }
   }
 
   private static void executeBatchRequest(

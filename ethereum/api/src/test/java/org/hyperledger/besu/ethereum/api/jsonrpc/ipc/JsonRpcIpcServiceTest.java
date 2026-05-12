@@ -85,7 +85,9 @@ class JsonRpcIpcServiceTest {
         new JsonRpcIpcService(
             vertx,
             socketPath,
-            new JsonRpcExecutor(new CombinedJsonRpcProcessor(new NoOpMetricsSystem()), Map.of("test_method", testMethod)));
+            new JsonRpcExecutor(
+                new CombinedJsonRpcProcessor(new NoOpMetricsSystem()),
+                Map.of("test_method", testMethod)));
     final String expectedResponse = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"TEST OK\"}\n";
 
     assertSocketCall(
@@ -128,7 +130,8 @@ class JsonRpcIpcServiceTest {
         new JsonRpcIpcService(
             vertx,
             socketPath,
-            new JsonRpcExecutor(new CombinedJsonRpcProcessor(new NoOpMetricsSystem()), Collections.emptyMap()));
+            new JsonRpcExecutor(
+                new CombinedJsonRpcProcessor(new NoOpMetricsSystem()), Collections.emptyMap()));
     final String expectedResponse =
         "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32600,\"message\":\"Invalid Request\"}}\n";
 

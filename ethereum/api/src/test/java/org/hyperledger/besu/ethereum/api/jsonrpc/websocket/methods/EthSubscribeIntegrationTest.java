@@ -76,7 +76,9 @@ public class EthSubscribeIntegrationTest {
     webSocketMessageHandler =
         new WebSocketMessageHandler(
             vertx,
-            new JsonRpcExecutor(new CombinedJsonRpcProcessor(new NoOpMetricsSystem()), webSocketMethodsFactory.methods()),
+            new JsonRpcExecutor(
+                new CombinedJsonRpcProcessor(new NoOpMetricsSystem()),
+                webSocketMethodsFactory.methods()),
             Mockito.mock(EthScheduler.class),
             TimeoutOptions.defaultOptions().getTimeoutSeconds());
   }

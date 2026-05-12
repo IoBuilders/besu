@@ -70,7 +70,9 @@ public class EthUnsubscribeIntegrationTest {
     webSocketMessageHandler =
         new WebSocketMessageHandler(
             vertx,
-            new JsonRpcExecutor(new CombinedJsonRpcProcessor(new NoOpMetricsSystem()), webSocketMethodsFactory.methods()),
+            new JsonRpcExecutor(
+                new CombinedJsonRpcProcessor(new NoOpMetricsSystem()),
+                webSocketMethodsFactory.methods()),
             mock(EthScheduler.class),
             TimeoutOptions.defaultOptions().getTimeoutSeconds());
   }
