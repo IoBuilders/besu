@@ -1,5 +1,5 @@
 /*
- * Copyright contributors to Hyperledger Besu.
+ * Copyright contributors to Besu.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -15,7 +15,6 @@
 package org.hyperledger.besu.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.hyperledger.besu.plugin.services.HealthCheckService;
 
@@ -42,13 +41,15 @@ public class HealthCheckServiceImplTest {
   }
 
   @Test
-  void shouldThrowWhenRegisteringDuplicateEndpoint() {
-    final HealthCheckService.HealthCheckProvider provider = params -> true;
-    healthCheckService.registerHealthCheck("/test", provider);
+  void shouldAllowOverridingExistingEndpoint() {
+    final HealthCheckService.HealthCheckProvider provider1 = params -> true;
+    final HealthCheckService.HealthCheckProvider provider2 = params -> false;
+    healthCheckService.registerHealthCheck("/test", provider1);
 
-    assertThatThrownBy(() -> healthCheckService.registerHealthCheck("/test", provider))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("/test");
+    healthCheckService.registerHealthCheck("/test", provider2);
+
+    assertThat(healthCheckService.getHealthCheck("/test")).isPresent();
+    assertThat(healthCheckService.getHealthCheck("/test").get()).isSameAs(provider2);
   }
 
   @Test

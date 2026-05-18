@@ -30,11 +30,7 @@ public class HealthCheckServiceImpl implements HealthCheckService {
 
   @Override
   public void registerHealthCheck(final String endpoint, final HealthCheckProvider provider) {
-    final HealthCheckProvider existing = healthChecks.putIfAbsent(endpoint, provider);
-    if (existing != null) {
-      throw new IllegalArgumentException(
-          "Health check already registered for endpoint: " + endpoint);
-    }
+    healthChecks.put(endpoint, provider);
   }
 
   @Override
