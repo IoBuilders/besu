@@ -27,6 +27,8 @@ import java.util.Optional;
 public class ReadinessCheckPlugin implements BesuPlugin {
 
   private static final String READINESS_ENDPOINT = "/readiness";
+  private static final int DEFAULT_MIN_PEERS = 1;
+  private static final long DEFAULT_MAX_BLOCKS_BEHIND = Long.MAX_VALUE;
 
   /** Instantiates a new readiness check plugin. */
   public ReadinessCheckPlugin() {}
@@ -35,12 +37,14 @@ public class ReadinessCheckPlugin implements BesuPlugin {
    * Safely parses a string to a non-negative integer.
    *
    * @param value the string to parse
-   * @return an Optional containing the parsed value if successful and non-negative, or empty
+   * @param defaultValue the value to return when the input is null or unparseable
+   * @return an Optional containing the parsed value if successful and non-negative, or the default
    *     otherwise
    */
-  private static Optional<Integer> parseNonNegativeInt(final String value) {
+  private static Optional<Integer> parseNonNegativeInt(
+      final String value, final int defaultValue) {
     if (value == null) {
-      return Optional.empty();
+      return Optional.of(defaultValue);
     }
     try {
       int parsed = Integer.parseInt(value);
@@ -54,12 +58,14 @@ public class ReadinessCheckPlugin implements BesuPlugin {
    * Safely parses a string to a non-negative long.
    *
    * @param value the string to parse
-   * @return an Optional containing the parsed value if successful and non-negative, or empty
-   *     otherwise
+   * @param defaultValue the value to return when the input is null
+   * @return an Optional containing the parsed value if successful and non-negative, the default
+   *     when null, or empty for malformed/negative input
    */
-  private static Optional<Long> parseNonNegativeLong(final String value) {
+  private static Optional<Long> parseNonNegativeLong(
+      final String value, final long defaultValue) {
     if (value == null) {
-      return Optional.empty();
+      return Optional.of(defaultValue);
     }
     try {
       long parsed = Long.parseLong(value);
@@ -78,6 +84,17 @@ public class ReadinessCheckPlugin implements BesuPlugin {
   public void register(final ServiceManager context) {
     this.context = context;
 
+    final HealthCheckService healthCheckService =
+        context
+            .getService(HealthCheckService.class)
+            .orElseThrow(
+                () -> new IllegalStateException("Required service missing: HealthCheckService"));
+
+    healthCheckService.registerHealthCheck(READINESS_ENDPOINT, this::checkReadiness);
+  }
+
+  @Override
+  public void start() {
     this.p2pService =
         context
             .getService(P2PService.class)
@@ -86,19 +103,17 @@ public class ReadinessCheckPlugin implements BesuPlugin {
         context
             .getService(BesuEvents.class)
             .orElseThrow(() -> new IllegalStateException("Required service missing: BesuEvents"));
-    final HealthCheckService healthCheckService =
-        context
-            .getService(HealthCheckService.class)
-            .orElseThrow(
-                () -> new IllegalStateException("Required service missing: HealthCheckService"));
 
     syncListenerId = besuEvents.addSyncStatusListener(status -> cachedSyncStatus = status);
-    healthCheckService.registerHealthCheck(READINESS_ENDPOINT, this::checkReadiness);
   }
 
   private boolean checkReadiness(final HealthCheckService.ParamSource params) {
+    if (p2pService == null) {
+      return false;
+    }
+
     final String minPeersStr = params.getParam("minPeers");
-    final Optional<Integer> minPeers = parseNonNegativeInt(minPeersStr);
+    final Optional<Integer> minPeers = parseNonNegativeInt(minPeersStr, DEFAULT_MIN_PEERS);
     if (minPeers.isEmpty()) {
       return false;
     }
@@ -107,7 +122,8 @@ public class ReadinessCheckPlugin implements BesuPlugin {
     }
 
     final String maxBlocksStr = params.getParam("maxBlocksBehind");
-    final Optional<Long> maxBlocksBehind = parseNonNegativeLong(maxBlocksStr);
+    final Optional<Long> maxBlocksBehind =
+        parseNonNegativeLong(maxBlocksStr, DEFAULT_MAX_BLOCKS_BEHIND);
     if (maxBlocksBehind.isEmpty()) {
       return false;
     }
@@ -123,9 +139,6 @@ public class ReadinessCheckPlugin implements BesuPlugin {
             })
         .orElse(true);
   }
-
-  @Override
-  public void start() {}
 
   @Override
   public void stop() {

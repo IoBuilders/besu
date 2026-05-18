@@ -65,6 +65,7 @@ public class ReadinessCheckPluginTest {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
 
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -85,6 +86,7 @@ public class ReadinessCheckPluginTest {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
 
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -101,9 +103,14 @@ public class ReadinessCheckPluginTest {
   }
 
   @Test
-  void shouldHaveNoOpStart() {
+  void shouldInitializeRuntimeServicesOnStart() {
+    when(besuEvents.addSyncStatusListener(any())).thenReturn(1L);
+
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
+    plugin.register(serviceManager);
     plugin.start();
+
+    verify(besuEvents).addSyncStatusListener(any());
   }
 
   @Test
@@ -113,6 +120,7 @@ public class ReadinessCheckPluginTest {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
 
     plugin.register(serviceManager);
+    plugin.start();
 
     plugin.stop();
 
@@ -123,6 +131,7 @@ public class ReadinessCheckPluginTest {
   void shouldPassWhenSyncStatusWithinThreshold() {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -147,6 +156,7 @@ public class ReadinessCheckPluginTest {
   void shouldFailWhenSyncStatusExceedsThreshold() {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -171,6 +181,7 @@ public class ReadinessCheckPluginTest {
   void shouldPassWhenHighestBlockEqualsCurrentBlock() {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -195,6 +206,7 @@ public class ReadinessCheckPluginTest {
   void shouldTreatMalformedMinPeersAsUnhealthy() {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -213,6 +225,7 @@ public class ReadinessCheckPluginTest {
   void shouldTreatMalformedMaxBlocksBehindAsUnhealthy() {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -237,6 +250,7 @@ public class ReadinessCheckPluginTest {
   void shouldTreatNegativeMinPeersAsUnhealthy() {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
@@ -255,6 +269,7 @@ public class ReadinessCheckPluginTest {
   void shouldTreatNegativeMaxBlocksBehindAsUnhealthy() {
     final ReadinessCheckPlugin plugin = new ReadinessCheckPlugin();
     plugin.register(serviceManager);
+    plugin.start();
 
     final var captor =
         org.mockito.ArgumentCaptor.forClass(HealthCheckService.HealthCheckProvider.class);
