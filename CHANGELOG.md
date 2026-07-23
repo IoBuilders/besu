@@ -41,6 +41,7 @@
 - Fix `admin_nodeInfo` reporting wrong RLPx/discovery ephemeral ports under `--nat-method=DOCKER`, due to a swapped NAT port mapping and a stale pre-bind snapshot. [#10860](https://github.com/besu-eth/besu/pull/10860)
 - `eth_simulateV1` no longer applies EIP-7825's transaction gas limit cap to simulation gas, fixing incorrect block/transaction hashes on Osaka [#10885](https://github.com/besu-eth/besu/pull/10885)
 - Recover from restart during flatDB heal sync step [#10883](https://github.com/besu-eth/besu/pull/10883)
+- Reject EIP-7702 code-delegation (type 0x04) transactions with an empty `authorization_list`, which is invalid per the spec. Such transactions are now rejected at build/decode time, and peers that send them (in a transactions broadcast or in a block-bodies response) are disconnected with `BREACH_OF_PROTOCOL_MALFORMED_MESSAGE_RECEIVED`. [#10853](https://github.com/besu-eth/besu/pull/10853)
 
 ### Additions and Improvements
 - Align Kotlin runtime dependencies to 2.4.0 to support plugins compiled against the Kotlin 2.4 API. [#10983](https://github.com/besu-eth/besu/pull/10983)
